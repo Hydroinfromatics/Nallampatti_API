@@ -1,8 +1,12 @@
+#!/usr/bin/env python3
+
 import requests
 import pandas as pd
 from datetime import datetime, time, timedelta
 import json
 import time as time_module
+import sys
+import os
 from get_data import fetch_data_from_api
 
 # Global variable to store the data
@@ -38,7 +42,6 @@ def process_data(data):
         return pd.DataFrame()
 
 def get_historical_data(days=7):
-    """Get data from the past specified number of days"""
     global data_store
     if data_store.empty:
         return pd.DataFrame()
@@ -48,7 +51,6 @@ def get_historical_data(days=7):
     return historical_data
 
 def format_data_as_json(df, data_type="live"):
-    """Convert DataFrame to JSON with specified data type"""
     try:
         df_copy = df.copy()
         df_copy['timestamp'] = df_copy['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -70,52 +72,69 @@ def format_data_as_json(df, data_type="live"):
         }
 
 def continuous_monitoring(api_url, update_interval=60):
-    """Continuously monitor and display both historical and live data"""
     global data_store
     
-    print("Starting continuous monitoring...")
+    print(f"Starting continuous monitoring at {datetime.now()}")
     print(f"Update interval: {update_interval} seconds")
     
     try:
         while True:
-            # Fetch and process new data
-            data = fetch_data_from_api(api_url)
-            if data:
-                new_data = process_data(data)
-                if not new_data.empty:
-                    data_store = pd.concat([data_store, new_data]).drop_duplicates().sort_values('timestamp')
-                    
-                    # Get and display historical data
-                    historical_data = get_historical_data(days=7)
-                    historical_json = format_data_as_json(historical_data, "historical")
-                    
-                    # Get and display live data (last 24 hours)
-                    live_data = get_historical_data(days=1)
-                    live_json = format_data_as_json(live_data, "live")
-                    
-                    # Clear console for better readability
-                    print("\033c", end='')
-                    
-                    # Display both data sets
-                    print("\n=== Historical Data (Last 7 Days) ===")
-                    print(json.dumps(historical_json, indent=2))
-                    
-                    print("\n=== Live Data (Last 24 Hours) ===")
-                    print(json.dumps(live_json, indent=2))
-                    
-                    print(f"\nLast updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                    print(f"Next update in {update_interval} seconds...")
-            
-            # Wait for the specified interval
-            time_module.sleep(update_interval)
+            try:
+                data = fetch_data_from_api(api_url)
+                if data:
+                    new_data = process_data(data)
+                    if not new_data.empty:
+                        data_store = pd.concat([data_store, new_data]).drop_duplicates().sort_values('timestamp')
+                        
+                        historical_data = get_historical_data(days=7)
+                        historical_json = format_data_as_json(historical_data, "historical")
+                        
+                        live_data = get_historical_data(days=1)
+                        live_json = format_data_as_json(live_data, "live")
+                        
+                        # Clear console for better readability
+                        os.system('cls' if os.name == 'nt' else 'clear')
+                        
+                        print("\n=== Historical Data (Last 7 Days) ===")
+                        print(json.dumps(historical_json, indent=2))
+                        
+                        print("\n=== Live Data (Last 24 Hours) ===")
+                        print(json.dumps(live_json, indent=2))
+                        
+                        print(f"\nLast updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(f"Next update in {update_interval} seconds...")
+                
+                time_module.sleep(update_interval)
+                
+            except requests.exceptions.RequestException as e:
+                print(f"Network error occurred: {e}")
+                print("Retrying in 30 seconds...")
+                time_module.sleep(30)
+            except Exception as e:
+                print(f"Error during monitoring: {e}")
+                print("Retrying in 30 seconds...")
+                time_module.sleep(30)
             
     except KeyboardInterrupt:
         print("\nMonitoring stopped by user")
+        sys.exit(0)
+
+def main():
+    try:
+        # Get API URL from environment variable or use default
+        api_url = os.getenv('API_URL', 'YOUR_API_URL_HERE')
+        update_interval = int(os.getenv('UPDATE_INTERVAL', '60'))
+        
+        if api_url == 'YOUR_API_URL_HERE':
+            print("Error: API_URL not set. Please set the API_URL environment variable.")
+            sys.exit(1)
+            
+        continuous_monitoring(api_url, update_interval)
+        
     except Exception as e:
-        print(f"\nAn error occurred: {e}")
+        print(f"Fatal error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    api_url = "https://mongodb-api-hmeu.onrender.com"   # Replace with your actual API URL
+    main()
     
-    # Start continuous monitoring with 60-second updates
-    continuous_monitoring(api_url, update_interval=600)
